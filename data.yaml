@@ -1,0 +1,6 @@
+path: C:/Users/Usuário/Desktop/hope
+train: imagens/train
+val: imagens/val
+
+nc: 2
+names: ['diatraea_saccharalis', 'desconhecido']
