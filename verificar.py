@@ -1,9 +1,59 @@
 from ultralytics import YOLO
 import os
 from pathlib import Path
+import mysql.connector
+from mysql.connector import Error
+
+
+
+# FUNÇÃO DE CONEXÃO AO BANCO
+
+def conectar_mysql():
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="felipe",
+            database="info"
+        )
+        return conn
+    except Error as e:
+        print("❌ Erro ao conectar ao MySQL:", e)
+        return None
+
+
+
+# SALVA A DETECÇÃO NO BANCO DE DADOS
+
+def salvar_detecao(imagem, classe, confianca, caminho_saida):
+    conn = conectar_mysql()
+    if conn is None:
+        return
+
+    try:
+        cursor = conn.cursor()
+        query = """
+        INSERT INTO detecoes (imagem, classe, confianca, caminho_saida)
+        VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(query, (imagem, classe, confianca, caminho_saida))
+        conn.commit()
+
+        print("💾 Dados enviados ao banco com sucesso!")
+
+    except Error as e:
+        print("❌ Erro ao salvar no MySQL:", e)
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+# RESTANTE DO SEU CÓDIGO
+
 
 def listar_modelos():
-    """Lista todos os modelos treinados disponíveis"""
     runs_path = Path('runs/detect')
 
     if not runs_path.exists():
@@ -27,7 +77,6 @@ def listar_modelos():
 
 
 def escolher_modelo():
-    """Permite escolher qual modelo usar"""
     print("\n" + "=" * 70)
     print("🦋 DETECTOR DE LAGARTAS - ESCOLHER MODELO")
     print("=" * 70)
@@ -65,13 +114,12 @@ def escolher_modelo():
 
 
 def detectar_imagem(model, caminho_imagem):
-    """Realiza a detecção em uma imagem"""
     if not os.path.exists(caminho_imagem):
         print(f"❌ Arquivo não encontrado: {caminho_imagem}")
         return
 
     print("\n🔍 Executando predição com confiança mínima de 0.10 ...")
-    results = model.predict(source=caminho_imagem, conf=0.1, verbose=False, save=True)
+    results = model.predict(source=caminho_imagem, conf=0.4, verbose=False, save=True)
 
     for result in results:
         boxes = result.boxes
@@ -79,7 +127,7 @@ def detectar_imagem(model, caminho_imagem):
         print(f"🔍 {len(boxes)} detecção(ões) encontradas")
 
         if len(boxes) == 0:
-            print("❓ Nenhum objeto detectado — tente ajustar o ângulo, luz ou aumentar o treino.")
+            print("❓ Nenhum objeto detectado.")
         else:
             print("\n📋 Detecções:")
             for i, box in enumerate(boxes):
@@ -95,10 +143,17 @@ def detectar_imagem(model, caminho_imagem):
             classe = model.names[cls]
 
             print("\n✅ RESULTADO FINAL:")
-            if classe == 'diatraea_saccharalis':
-                print(f"🐛 Lagarta detectada: {classe} ({conf:.1%})")
-            else:
-                print(f"❓ Detectado como '{classe}' ({conf:.1%})")
+            print(f"📌 Classe detectada: {classe} ({conf:.1%})")
+
+
+            # SALVA NO BANCO DE DADOS !!!
+        
+            salvar_detecao(
+                imagem=caminho_imagem,
+                classe=classe,
+                confianca=conf * 100,  # armazena como porcentagem
+                caminho_saida=str(result.save_dir)
+            )
 
         print(f"\n💾 Imagem anotada salva em: {result.save_dir}")
         print(f"{'─' * 60}\n")
@@ -109,7 +164,7 @@ def main():
     if not model:
         return
 
-    print("\n🔍 Digite o caminho da imagem (ou ENTER para usar a imagem enviada):")
+    print("\n🔍 Digite o caminho da imagem (ou ENTER para usar a padrão):")
     caminho = input("➜ ").strip().strip('"').strip("'")
 
     if caminho == "":
